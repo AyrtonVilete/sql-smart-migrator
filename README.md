@@ -132,4 +132,6 @@ pytest -q
 - [src/cli.py](src/cli.py): wrapper CLI para executar o agente.
 - [tests/test_agent.py](tests/test_agent.py): testes unitários.
 
+UPDATE Disponibilizado em Release
+V2 - Disponibilizada. 
 
