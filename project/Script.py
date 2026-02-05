@@ -17,20 +17,29 @@ st.set_page_config(page_title="Migrador SQL Completo", layout="wide", page_icon=
 st.title("🚀 Migrador SQL")
 
 # --- VARIÁVEIS FIXAS ---
-ARQUIVO_CLIENT_SECRET = "client_secret.json"
-ARQUIVO_TOKEN = "token.json"
+PASTA_CREDENCIAIS = "Credencials"
 ID_PADRAO_DRIVE = "1M2OZgy3MV8JcYyvMngVE5ZDEHChwmCR2" # Sua pasta fixa
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
+
+if not os.path.exists(PASTA_CREDENCIAIS):
+    os.makedirs(PASTA_CREDENCIAIS)
+
+ARQUIVO_CLIENT_SECRET = os.path.join(PASTA_CREDENCIAIS, "client_secret.json")
+ARQUIVO_TOKEN = os.path.join(PASTA_CREDENCIAIS, "token.json")
+
+ARQUIVO_CLIENT_LOCK = os.path.join(PASTA_CREDENCIAIS, "client_secret.lock")
 
 # --- FUNÇÕES GOOGLE ---
 def autenticar_google_drive():
     creds = None
+    
+    # 1. Tenta carregar o token da pasta 'Credencials'
     if os.path.exists(ARQUIVO_TOKEN):
         try:
             creds = Credentials.from_authorized_user_file(ARQUIVO_TOKEN, SCOPES)
         except:
-            pass # Token inválido, vamos recriar
-
+            pass 
+    # 2. Se não houver credenciais válidas, inicia o fluxo de autenticação
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             try:
@@ -39,13 +48,16 @@ def autenticar_google_drive():
                 creds = None
         
         if not creds:
+            # Verifica se o 'client_secret.json' está dentro da pasta 'Credencials'
             if not os.path.exists(ARQUIVO_CLIENT_SECRET):
-                return None, "Arquivo 'client_secret.json' não encontrado."
+                # Retorna um erro claro mostrando onde o sistema procurou
+                return None, f"Arquivo não encontrado em: {ARQUIVO_CLIENT_SECRET}"
             
-            # Porta 8090 (Configuração do OAuth no Google Cloud Console)
+            # Inicia o fluxo OAuth na porta 8090
             flow = InstalledAppFlow.from_client_secrets_file(ARQUIVO_CLIENT_SECRET, SCOPES)
             creds = flow.run_local_server(port=8090)
             
+            # Salva o novo token dentro da pasta 'Credencials'
             with open(ARQUIVO_TOKEN, 'w') as token:
                 token.write(creds.to_json())
                 
@@ -89,13 +101,45 @@ def render_db_inputs(k):
 with st.sidebar:
     st.header("☁️ Status Google Drive")
     folder_id = st.text_input("ID Pasta Drive", value=ID_PADRAO_DRIVE)
+    
     if os.path.exists(ARQUIVO_TOKEN):
         st.success("✅ Login Salvo")
-        if st.button("Sair (Logout)"):
-            os.remove(ARQUIVO_TOKEN)
-            st.rerun()
+        
+        col_teste, col_sair = st.columns(2)
+        
+        # BOTÃO 1: TESTAR CONEXÃO
+        with col_teste:
+            if st.button("📡 Testar API"):
+                with st.spinner("Validando token..."):
+                    try:
+                        service, msg = autenticar_google_drive()
+                        
+                        if service:
+                            about_info = service.about().get(fields="user").execute()
+                            
+                            email_usuario = about_info['user']['emailAddress']
+                            nome_usuario = about_info['user']['displayName']
+                        
+                            st.toast(f"Token Válido! Olá, {nome_usuario}", icon="✅")
+                            st.info(f"Conectado como:\n{email_usuario}")
+                        else:
+                            st.error(f"Falha na autenticação: {msg}")
+                            
+                    except Exception as e:
+                        st.error("Erro ao validar token.")
+                        st.caption(f"Detalhe técnico: {e}")
+
+        # BOTÃO 2: LOGOUT
+        with col_sair:
+            if st.button("🚪 Sair"):
+                try:
+                    os.remove(ARQUIVO_TOKEN)
+                    st.rerun()
+                except:
+                    st.error("Erro ao apagar token.")
+    
     else:
-        st.info("O login será solicitado na execução.")
+        st.info("O login será solicitado na primeira execução.")
 
 c1, c2 = st.columns(2)
 with c1: src = render_db_inputs("Origem")
@@ -130,7 +174,14 @@ if st.button("🚀 EXECUTAR PROCESSO COMPLETO", type="primary"):
         if not ok_s: raise Exception(f"Erro Origem: {err_s}")
         
         status.write(f"📖 Lendo dados de '{tab}'...")
-        df_origem = pd.read_sql(f"SELECT * FROM {tab}", eng_s)
+        try:
+            # read_sql_table é blindado. Ele sanitiza o nome da tabela automaticamente.
+            df_origem = pd.read_sql_table(tab, eng_s)
+        except ValueError:
+            # O Pandas lança ValueError se a tabela não existir
+            st.error(f"❌ A tabela '{tab}' não foi encontrada no banco de origem.")
+            st.stop()
+        # ------------------------------------
         
         if df_origem.empty:
             st.warning("A tabela de origem está vazia.")
@@ -171,37 +222,43 @@ if st.button("🚀 EXECUTAR PROCESSO COMPLETO", type="primary"):
             if "Inteligente" in modo:
                 status.write("🕵️ Analisando duplicidades...")
                 try:
-                    # Lê apenas os IDs do destino para comparar
-                    ids_destino = pd.read_sql(f"SELECT {pk} FROM {tab}", eng_d)
-                    lista_ids = ids_destino[pk].tolist()
+                    # --- 🛡️ ALTERAÇÃO DE SEGURANÇA 2 ---
+                    # Em vez de f"SELECT {pk}...", usamos a abstração:
+                    ids_destino = pd.read_sql_table(tab, eng_d, columns=[pk])
+                    # ------------------------------------
                     
-                    # Filtra o que já existe
-                    mask = df_origem[pk].isin(lista_ids)
-                    df_final = df_origem[~mask] # Apenas os novos
-                    dup_count = mask.sum()
-                    
+                    if not ids_destino.empty:
+                        # Otimização com SET para performance (O(1))
+                        lista_ids = set(ids_destino[pk].tolist())
+                        
+                        mask = df_origem[pk].isin(lista_ids)
+                        df_final = df_origem[~mask]
+                        dup_count = mask.sum()
+                    else:
+                        dup_count = 0
+
                     status.write(f"📊 Análise: {len(df_final)} Novos | {dup_count} Duplicados (Ignorados)")
+                
+                except ValueError:
+                    # Se der erro aqui, é provável que a tabela não exista no destino ainda
+                    status.write("ℹ️ Tabela destino não existe. Tudo será inserido como novo.")
                 except Exception as e:
-                    status.write("ℹ️ Tabela destino nova ou erro de leitura. Inserindo tudo.")
+                    # Outros erros (ex: coluna PK não existe)
+                    status.warning(f"Aviso na verificação: {e}")
 
             # Define o comportamento de escrita
-            if "Replace" in modo:
-                metodo = "replace"
-            else:
-                metodo = "append" # Append é usado no modo simples e no inteligente (após filtro)
+            metodo = "replace" if "Replace" in modo else "append"
 
             if not df_final.empty:
                 status.write(f"🚀 Inserindo {len(df_final)} linhas no destino...")
+                # to_sql já é seguro por natureza (usa parâmetros internamente)
                 df_final.to_sql(tab, eng_d, if_exists=metodo, index=False, chunksize=1000)
                 status.update(label="Sucesso Total! 🏁", state="complete")
                 st.success(f"Processo finalizado! {len(df_final)} linhas transferidas.")
             else:
                 status.update(label="Finalizado (Nada a inserir)", state="complete")
                 st.info("Nenhum dado novo para transferir. Backup na nuvem está OK.")
-        
-        else:
-            status.update(label="Concluído (Apenas Backup)", state="complete")
-
+                
     except Exception as e:
         status.update(label="Erro Crítico", state="error")
         st.error(f"Ocorreu um erro: {e}")
