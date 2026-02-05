@@ -7,7 +7,6 @@ venv/
 *.sqlite
 backup_*.csv
 .DS_Store
-# Ignorar arquivos de segredos (NUNCA SUBIR ISSO)
 client_secret.json
 token.json
 credentials.json

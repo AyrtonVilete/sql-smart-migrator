@@ -1,7 +1,10 @@
+# Para instalar todas as dependências: pip install -r requirements.txt
+
 streamlit
 pandas
 SQLAlchemy
 pymysql
+psycopg2-binary
 pytest
 google-auth-oauthlib
 google-auth-httplib2
