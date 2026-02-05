@@ -167,48 +167,53 @@ def testar_conexao(url):
         with eng.connect() as c: return True, None, eng
     except Exception as e: return False, str(e), None
 
-# --- SIDEBAR (Status Google) ---
+
 # --- SIDEBAR (Status Google) ---
 with st.sidebar:
     st.header("☁️ Status Google Drive")
     
-    # MUDANÇA AQUI: Definimos a variável direto, sem input visual
     folder_id = ID_PADRAO_DRIVE 
     
-    # Mostra apenas um status discreto se o ID está configurado no código
     if folder_id:
-        st.caption(f"📁 Pasta Destino Configurada")
+        st.caption(f"📁 Pasta Destino: `{folder_id[:8]}...`")
     else:
-        st.error("⚠️ ID da Pasta não configurado no código!")
+        st.error("⚠️ ID da Pasta não configurado!")
 
+    # Verifica se o arquivo de token existe para decidir o que mostrar
     if os.path.exists(ARQUIVO_TOKEN):
-        st.success("✅ Login Salvo")
+        st.success("✅ Login Ativo")
         
-        # Cria colunas para os botões ficarem lado a lado
         col_test, col_logout = st.columns(2)
-        
         with col_test:
-            if st.button("📡 Testar API"):
+            if st.button("📡 Testar API", use_container_width=True):
                 with st.spinner("Validando..."):
                     try:
-                        s, _ = autenticar_google_drive()
-                        if s: 
-                            u = s.about().get(fields="user").execute()
-                            st.toast(f"Token Válido! Olá {u['user']['displayName']}", icon="✅")
+                        srv, msg = autenticar_google_drive()
+                        if srv: 
+                            u = srv.about().get(fields="user").execute()
+                            st.toast(f"Olá, {u['user']['displayName']}!", icon="✅")
+                        else:
+                            st.error(msg)
                     except: 
                         st.error("Erro no token")
         
         with col_logout:
-            if st.button("🚪 Sair"):
-                try:
+            if st.button("🚪 Sair", use_container_width=True):
+                if os.path.exists(ARQUIVO_TOKEN):
                     os.remove(ARQUIVO_TOKEN)
-                    st.rerun() 
-                except:
-                    st.error("Erro ao sair")
-
-    else: 
-        st.info("Login automático na execução.")
-
+                    st.rerun()
+    else:
+        # SE NÃO EXISTIR TOKEN: Mostra o botão para iniciar a autenticação
+        st.warning("Acesso não autorizado")
+        if st.button("🔑 Autenticar Google Drive", type="primary", use_container_width=True):
+            with st.spinner("Aguardando autorização no navegador..."):
+                srv, msg = autenticar_google_drive()
+                if srv:
+                    st.success("Autenticado com sucesso!")
+                    st.rerun()
+                else:
+                    st.error(f"Falha: {msg}")
+                    
 # Listar bancos disponíveis (para dropdown) - Pode ser usado para pré-carregar opções de banco
 
 def listar_bancos_disponiveis(tipo, driver, manual, host, port, user, pwd):
