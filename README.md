@@ -13,7 +13,7 @@ pip install -r requirements.txt
 - Rodar o app Streamlit (interface disponível em `Script.py`):
 
 ```bash
-streamlit run Script.py
+streamlit run project\Script.py
 ```
 
 - Executar o agente de demonstração:
