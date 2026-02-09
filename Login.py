@@ -2,7 +2,7 @@ import streamlit as st
 import sys
 
 # --- CONFIGURAÇÃO DA PÁGINA (Deve ser a primeira linha) ---
-st.set_page_config(page_title="V-Nexus | Suite", page_icon="💠", layout="centered")
+st.set_page_config(page_title="V-Nexus | Suite", page_icon="🔐", layout="centered")
 
 # --- MODO DE DEBUG (Tenta rodar e mostra o erro se falhar) ---
 try:
@@ -55,9 +55,9 @@ def criar_usuario(nome, user, senha):
 def main():
     if not st.session_state.autenticado:
         # Esconde sidebar
-        st.markdown("<h1 style='text-align: center;'>💠 V-Nexus System</h1>", unsafe_allow_html=True)
+        st.markdown("<style>section[data-testid='stSidebar'] {display: none;}</style>", unsafe_allow_html=True)
         
-        st.title(f"💠 V-Nexus Dashboard")
+        st.title("🚪 Seja Bem-Vindo")
         tab1, tab2 = st.tabs(["Login", "Cadastro"])
         
         with tab1:
