@@ -48,6 +48,8 @@ def criar_usuario(nome, user, senha):
             return True, "Cadastro realizado!"
     except Exception as e:
         return False, f"Erro ao cadastrar: {e}"
+    
+#TESTE
 
 # --- INTERFACE PRINCIPAL ---
 def main():
