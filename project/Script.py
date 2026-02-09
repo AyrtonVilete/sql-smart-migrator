@@ -17,37 +17,66 @@ from googleapiclient.http import MediaFileUpload
 st.set_page_config(page_title="Migrador SQL - Cloud v3", layout="wide", page_icon="☁️")
 st.title("☁️ Migrador SQL (Versão Cloud)")
 
-# --- CONFIGURAÇÃO DE SEGREDOS (STREAMLIT SECRETS) ---
+# --- CONFIGURAÇÃO ---
+PASTA_CREDENCIAIS = "Credencials"
+ARQUIVO_TOKEN = os.path.join(PASTA_CREDENCIAIS, "token.json") if os.path.exists(PASTA_CREDENCIAIS) else "token.json"
 ID_PADRAO_DRIVE = "1M2OZgy3MV8JcYyvMngVE5ZDEHChwmCR2" 
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
 
 # --- FUNÇÕES GOOGLE (OTIMIZADA PARA NUVEM) ---
 def autenticar_google_drive():
-    """
-    Autenticação via Streamlit Secrets. 
-    Se não houver token salvo na sessão, inicia o fluxo OAuth.
-    """
     creds = None
     
-    # Tenta recuperar credenciais da sessão para não pedir login a cada clique
-    if 'google_creds' in st.session_state:
-        creds = st.session_state['google_creds']
+    # 1. TENTA CARREGAR DAS SECRETS (Prioridade Total para o Streamlit Cloud)
+    if "google" in st.secrets:
+        if "token_json" in st.secrets["google"]:
+            try:
+                token_info = json.loads(st.secrets["google"]["token_json"])
+                creds = Credentials.from_authorized_user_info(token_info, SCOPES)
+            except Exception as e:
+                st.warning(f"Aviso: Não foi possível ler o token das Secrets. Tentando outros métodos.")
 
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
+    # 2. TENTA CARREGAR ARQUIVO LOCAL (Fallback para seu PC)
+    if not creds:
+        try:
+            if os.path.exists(ARQUIVO_TOKEN):
+                creds = Credentials.from_authorized_user_file(ARQUIVO_TOKEN, SCOPES)
+        except:
+            pass
+
+    # 3. VALIDAÇÃO E RENOVAÇÃO AUTOMÁTICA
+    if creds and creds.expired and creds.refresh_token:
+        try:
             creds.refresh(Request())
-        else:
-            # Busca o JSON diretamente das Secrets do Streamlit Cloud
-            if "google" in st.secrets:
+        except Exception as e:
+            st.error(f"Erro ao renovar acesso: {e}")
+            creds = None
+
+    # 4. CASO NÃO TENHA TOKEN VÁLIDO
+    if not creds:
+        if "google" in st.secrets:
+            try:
                 client_config = json.loads(st.secrets["google"]["client_secret"])
                 flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
-                # No Cloud, o fluxo precisa ser redirecionado corretamente
-                creds = flow.run_local_server(port=0) 
-                st.session_state['google_creds'] = creds
-            else:
-                return None, "ERRO: Configure as Secrets no Painel do Streamlit."
+                
+                if os.getenv("STREAMLIT_RUNTIME_ENV"):
+                    return None, "Token expirado. Por favor, gere um novo token localmente e atualize as Secrets."
+                
+                creds = flow.run_local_server(port=8090)
+                
+                if os.path.exists(PASTA_CREDENCIAIS):
+                    with open(ARQUIVO_TOKEN, 'w') as token:
+                        token.write(creds.to_json())
+            except Exception as e:
+                return None, f"Erro na autenticação: {e}"
+        else:
+            return None, "Configuração de segredos ausente."
 
-    return build('drive', 'v3', credentials=creds), "OK"
+    try:
+        service = build('drive', 'v3', credentials=creds)
+        return service, "OK"
+    except Exception as e:
+        return None, f"Erro ao criar serviço: {e}"
 
 def upload_para_drive(service, caminho_arquivo, nome_arquivo, id_pasta):
     try:
