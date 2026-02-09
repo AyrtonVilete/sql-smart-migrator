@@ -1,7 +1,27 @@
 import streamlit as st
 import google.generativeai as genai
 
-# Configuração da API
+# --- CONFIGURAÇÃO DA PÁGINA ---
+st.set_page_config(page_title="Agente Auditor IA", page_icon="🤖", layout="wide")
+
+# --- TRAVA DE SEGURANÇA (Igual ao Migrador) ---
+if not st.session_state.get('autenticado'):
+    st.error("🚫 Acesso negado! Faça login no Portal.")
+    st.stop()
+
+# Verifica permissão específica de IA
+if not st.session_state.get('p_ia', False):
+    st.warning("⚠️ Seu usuário não tem permissão para acessar o Agente IA.")
+    st.stop()
+
+# --- CSS PARA ESCONDER MENU LATERAL AUTOMÁTICO ---
+st.markdown("""
+    <style>
+        [data-testid="stSidebarNav"] {display: none !important;}
+    </style>
+""", unsafe_allow_html=True)
+
+# --- FUNÇÕES ---
 def configurar_gemini():
     if "gemini" in st.secrets:
         chave = st.secrets["gemini"]["api_key"]
@@ -11,29 +31,58 @@ def configurar_gemini():
 
 def consultar_ia(pergunta):
     try:
-        # Usa o modelo Gemini Pro (texto)
-        model = genai.GenerativeModel('gemini-pro')
+        # CORREÇÃO AQUI: Mudamos de 'gemini-pro' para 'gemini-1.5-flash'
+        model = genai.GenerativeModel('gemini-1.5-flash')
         response = model.generate_content(pergunta)
         return response.text
     except Exception as e:
         return f"Erro na IA: {e}"
 
 # --- INTERFACE ---
-st.set_page_config(page_title="IA SQL Helper", page_icon="🤖")
+st.title("🤖 Agente Auditor V-Nexus")
+st.caption("Powered by Gemini 1.5 Flash")
 
-st.title("🤖 Assistente de IA com Gemini")
+# Botão de Voltar
+if st.button("⬅️ Voltar ao Dashboard"):
+    st.switch_page("Login.py")
+
+st.divider()
 
 if configurar_gemini():
-    texto_usuario = st.text_area("Cole seu código SQL ou Erro aqui:")
-    
-    if st.button("Analisar com IA"):
-        if texto_usuario:
-            with st.spinner("A IA está analisando..."):
-                prompt = f"Você é um especialista em SQL. Analise este código/erro e sugira correções de forma breve: {texto_usuario}"
-                resposta = consultar_ia(prompt)
-                st.markdown("### 🤖 Resposta:")
-                st.write(resposta)
-        else:
-            st.warning("Digite algo primeiro.")
+    # Layout de duas colunas
+    col_chat, col_info = st.columns([2, 1])
+
+    with col_chat:
+        st.subheader("💬 Chat de Auditoria")
+        texto_usuario = st.text_area("Cole o log de erro, trecho de código ou dúvida de auditoria:", height=150)
+        
+        if st.button("🔍 Analisar com IA", type="primary"):
+            if texto_usuario:
+                with st.spinner("O Agente está analisando os dados..."):
+                    # Prompt Engenheirado para QA
+                    prompt_sistema = f"""
+                    Você é um Auditor Sênior de QA e Segurança. 
+                    Analise o seguinte conteúdo técnico com foco em vulnerabilidades, boas práticas e correção de erros.
+                    Se for um erro de banco de dados, explique a causa raiz e a solução SQL.
+                    
+                    Conteúdo: {texto_usuario}
+                    """
+                    resposta = consultar_ia(prompt_sistema)
+                    
+                    st.success("Análise Concluída!")
+                    st.markdown("### 📝 Relatório do Agente:")
+                    st.write(resposta)
+            else:
+                st.warning("Por favor, insira algum conteúdo para análise.")
+
+    with col_info:
+        with st.container(border=True):
+            st.info("ℹ️ **Dicas de Uso**")
+            st.markdown("""
+            - Cole logs de erro do Migrador SQL.
+            - Peça validação de segurança em scripts.
+            - Solicite explicações de erros complexos.
+            """)
+
 else:
-    st.error("Configure a API Key do Gemini nas Secrets.")
+    st.error("⚠️ API Key do Gemini não configurada nas Secrets.")
