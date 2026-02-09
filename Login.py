@@ -34,7 +34,12 @@ def validar_login(usuario, senha):
     try:
         engine = conectar_banco()
         with engine.connect() as conn:
-            query = text("SELECT nome_exibicao, projeto_migrador FROM tb_usuarios WHERE usuario = :u AND senha = :p AND ativo = true")
+            # ATENÇÃO: Adicionei a coluna 'projeto_ia' na consulta aqui!
+            query = text("""
+                SELECT nome_exibicao, projeto_migrador, projeto_ia 
+                FROM tb_usuarios 
+                WHERE usuario = :u AND senha = :p AND ativo = true
+            """)
             return conn.execute(query, {"u": usuario, "p": senha}).fetchone()
     except Exception as e:
         st.error(f"⚠️ Erro de Conexão com Banco: {e}")
@@ -47,7 +52,11 @@ def criar_usuario(nome, user, senha):
             check = conn.execute(text("SELECT id FROM tb_usuarios WHERE usuario = :u"), {"u": user}).fetchone()
             if check: return False, "Usuário já existe."
             
-            query = text("INSERT INTO tb_usuarios (nome_exibicao, usuario, senha, projeto_migrador, ativo) VALUES (:n, :u, :p, false, true)")
+            # Novos usuários nascem sem acesso à IA (projeto_ia = false)
+            query = text("""
+                INSERT INTO tb_usuarios (nome_exibicao, usuario, senha, projeto_migrador, projeto_ia, ativo) 
+                VALUES (:n, :u, :p, false, false, true)
+            """)
             conn.execute(query, {"n": nome, "u": user, "p": senha})
             conn.commit()
             return True, "Cadastro realizado! Aguarde liberação."
@@ -76,7 +85,8 @@ def main():
                         if res:
                             st.session_state.autenticado = True
                             st.session_state.nome = res[0]
-                            st.session_state.p1 = res[1]
+                            st.session_state.p1 = res[1] # Permissão Migrador
+                            st.session_state.p_ia = res[2] # Permissão IA (NOVO)
                             st.rerun()
                         else:
                             st.error("Acesso negado.")
@@ -120,15 +130,20 @@ def main():
                 st.write("")
                 st.button("🚧 Em Construção", disabled=True, key="lok2")
 
-        # --- CARD 3: AGENTE DE AUDITORIA (NOVO) ---
+        # --- CARD 3: AGENTE DE AUDITORIA (ATUALIZADO) ---
         with col3:
             with st.container(border=True):
                 st.markdown("### 🤖 Agente Auditor IA")
-                st.caption("Em Breve")
+                st.caption("v1.0 - Gemini Powered")
                 st.write("Análise de logs e Chat de Auditoria.")
                 st.write("")
-                # Futuramente, apontará para pages/IA_Auditor.py
-                st.button("🚧 Em Construção", disabled=True, key="lok3")
+                
+                # AGORA VERIFICA A PERMISSÃO REAL
+                # Importante: O arquivo deve estar em pages/IA_Assistant.py
+                if st.session_state.get('p_ia', False):
+                    st.page_link("pages/IA_Assistant.py", label="🤖 Acessar IA", use_container_width=True)
+                else:
+                    st.button("🔒 Bloqueado", disabled=True, key="lok3")
 
         # Sidebar Pós-Login
         st.sidebar.markdown(f"👤 **{st.session_state.nome}**")

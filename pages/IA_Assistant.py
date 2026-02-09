@@ -21,7 +21,7 @@ def consultar_ia(pergunta):
 # --- INTERFACE ---
 st.set_page_config(page_title="IA SQL Helper", page_icon="🤖")
 
-st.title("🤖 Assistente de QA com Gemini")
+st.title("🤖 Assistente de IA com Gemini")
 
 if configurar_gemini():
     texto_usuario = st.text_area("Cole seu código SQL ou Erro aqui:")
@@ -29,7 +29,7 @@ if configurar_gemini():
     if st.button("Analisar com IA"):
         if texto_usuario:
             with st.spinner("A IA está analisando..."):
-                prompt = f"Você é um especialista em SQL e QA. Analise este código/erro e sugira correções de forma breve: {texto_usuario}"
+                prompt = f"Você é um especialista em SQL. Analise este código/erro e sugira correções de forma breve: {texto_usuario}"
                 resposta = consultar_ia(prompt)
                 st.markdown("### 🤖 Resposta:")
                 st.write(resposta)
