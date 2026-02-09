@@ -83,36 +83,38 @@ def obter_drivers_disponiveis():
 # --- FUNÇÕES GOOGLE ---
 def autenticar_google_drive():
     creds = None
-    
-    # 1. Tenta carregar token existente
+    # 1. Tenta carregar o token local (se existir)
     if os.path.exists(ARQUIVO_TOKEN):
-        try: creds = Credentials.from_authorized_user_file(ARQUIVO_TOKEN, SCOPES)
-        except: pass
-    
-    # 2. Valida ou Renova
+        try:
+            creds = Credentials.from_authorized_user_file(ARQUIVO_TOKEN, SCOPES)
+        except:
+            pass
+
+    # 2. Se não houver token válido, inicia o login
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            try: creds.refresh(Request())
-            except: creds = None
+            try:
+                creds.refresh(Request())
+            except:
+                creds = None
         
-        # 3. Se não tem credencial válida...
         if not creds:
-            if not os.path.exists(ARQUIVO_CLIENT_SECRET):
-                return None, "Arquivo 'client_secret.json' não encontrado na pasta Credencials."
-
-            # --- LÓGICA DE LOGIN HÍBRIDA ---
-            if IS_CLOUD:
-                # Na nuvem, não podemos abrir o navegador.
-                return None, "⚠️ MODO NUVEM: O servidor não pode abrir o navegador para login. Por favor, gere o arquivo 'token.json' na sua máquina local e faça upload dele para a pasta 'Credencials' do servidor."
-            else:
-                # Modo Local: Abre o navegador para o usuário clicar
-                try:
-                    flow = InstalledAppFlow.from_client_secrets_file(ARQUIVO_CLIENT_SECRET, SCOPES)
-                    creds = flow.run_local_server(port=8090)
+            # Tenta ler das Secrets do Streamlit Cloud
+            if "google" in st.secrets:
+                client_config = json.loads(st.secrets["google"]["client_secret"])
+                # Usamos from_client_config para não precisar do arquivo .json
+                flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
+                
+                # IMPORTANTE: run_local_server exige interação manual. 
+                # No Cloud, isso abrirá a aba de login para você.
+                creds = flow.run_local_server(port=8090)
+                
+                # Opcional: Salva o token localmente se estiver em dev
+                if not os.getenv("STREAMLIT_RUNTIME_ENV"): # Detecta se NÃO está no cloud
                     with open(ARQUIVO_TOKEN, 'w') as token:
                         token.write(creds.to_json())
-                except Exception as e:
-                    return None, f"Erro ao abrir navegador local: {e}"
+            else:
+                return None, "Atenção: client_secret.json não encontrado e Secrets não configuradas."
 
     return build('drive', 'v3', credentials=creds), "OK"
 
