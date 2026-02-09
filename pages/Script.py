@@ -13,6 +13,10 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
+if not st.session_state.get('autenticado'):
+    st.warning("Acesso negado. Faça login no Portal.")
+    st.stop()
+
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Migrador SQL - Cloud v3", layout="wide", page_icon="🧰")
 st.title("🧰 SQL Smart Migrator (v3 Cloud)")
@@ -139,8 +143,8 @@ with st.sidebar:
 
 # --- PAINEL PRINCIPAL ---
 col_src, col_dst = st.columns(2)
-with col_src: src_data = render_inputs("1. Origem (Extração)", "src")
-with col_dst: dst_data = render_inputs("2. Destino (Carga)", "dst")
+with col_src: src_data = render_inputs("1. Origem ", "src")
+with col_dst: dst_data = render_inputs("2. Destino ", "dst")
 
 st.divider()
 st.subheader("🛠️ Configuração da Migração")
