@@ -13,16 +13,24 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
+# --- 1. CONFIGURAÇÃO DA PÁGINA (ISSO TEM QUE SER A PRIMEIRA LINHA DO STREAMLIT) ---
+st.set_page_config(page_title="Migrador SQL - Cloud v3", layout="wide", page_icon="🧰")
+
+# --- 2. TRAVA DE SEGURANÇA (Vem depois da config) ---
 if not st.session_state.get('autenticado'):
-    st.warning("Acesso negado. Faça login no Portal.")
+    st.error("🚫 Acesso negado! Por favor, faça login no Portal primeiro.")
+    st.stop() # Para o código aqui se não estiver logado
+
+# --- 3. VERIFICAÇÃO DE PERMISSÃO ESPECÍFICA ---
+if not st.session_state.get('p1', False):
+    st.warning("⚠️ Você não tem permissão para acessar o Migrador.")
     st.stop()
 
-# --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Migrador SQL - Cloud v3", layout="wide", page_icon="🧰")
 st.title("🧰 SQL Smart Migrator (v3 Cloud)")
 
 # --- CONFIGURAÇÃO DE CAMINHOS E SECRETS ---
 PASTA_CREDENCIAIS = "Credencials"
+# ... (O resto do seu código continua igual daqui para baixo) ...
 ARQUIVO_TOKEN = os.path.join(PASTA_CREDENCIAIS, "token.json") if os.path.exists(PASTA_CREDENCIAIS) else "token.json"
 ID_PADRAO_DRIVE = "1M2OZgy3MV8JcYyvMngVE5ZDEHChwmCR2" 
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
@@ -66,7 +74,7 @@ def upload_para_drive(service, caminho_arquivo, nome_arquivo, id_pasta):
 
 # --- FUNÇÕES DE BANCO DE DADOS ---
 def montar_url_universal(tipo, driver_sql, host, port, db, user, pwd):
-    port = int(port) if port and port.isnumeric() else None
+    port = int(port) if port and str(port).isnumeric() else None # Pequena correção de segurança aqui
     if tipo == "SQL Server":
         conn_str = f"DRIVER={{{driver_sql}}};SERVER={host},{port};DATABASE={db};UID={user};PWD={pwd};TrustServerCertificate=yes;"
         return URL.create("mssql+pyodbc", query={"odbc_connect": conn_str})
