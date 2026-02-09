@@ -2,11 +2,11 @@
 
 streamlit
 pandas
-SQLAlchemy
+sqlalchemy
+pyodbc
 pymysql
 psycopg2-binary
-pytest
-google-auth-oauthlib
-google-auth-httplib2
 google-api-python-client
-pyodbc
+google-auth-httplib2
+google-auth-oauthlib
+cryptography
