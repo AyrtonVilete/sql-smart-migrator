@@ -4,10 +4,9 @@ import sys
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="V-Nexus | Suite", page_icon="💠", layout="wide")
 
-# --- CSS PARA ESCONDER A NAVEGAÇÃO AUTOMÁTICA (O SEGREDO ESTÁ AQUI) ---
+# --- CSS PARA ESCONDER A NAVEGAÇÃO AUTOMÁTICA ---
 st.markdown("""
     <style>
-        /* Esconde os links automáticos (Script, Login, etc.) */
         [data-testid="stSidebarNav"] {display: none !important;}
     </style>
 """, unsafe_allow_html=True)
@@ -59,7 +58,6 @@ def criar_usuario(nome, user, senha):
 def main():
     # 1. TELA DE LOGIN
     if not st.session_state.autenticado:
-        # Esconde a sidebar completamente na tela de login
         st.markdown("<style>section[data-testid='stSidebar'] {display: none;}</style>", unsafe_allow_html=True)
         
         col_c, col_form, col_d = st.columns([1, 2, 1])
@@ -101,6 +99,7 @@ def main():
 
         col1, col2, col3 = st.columns(3)
 
+        # --- CARD 1: MIGRADOR ---
         with col1:
             with st.container(border=True):
                 st.markdown("### 🧰 SQL Migrator")
@@ -112,20 +111,23 @@ def main():
                 else:
                     st.button("🔒 Bloqueado", disabled=True, key="lok1")
 
+        # --- CARD 2: ANALYTICS ---
         with col2:
             with st.container(border=True):
                 st.markdown("### 📊 Analytics")
                 st.caption("Em Breve")
-                st.write("Dashboard de dados.")
+                st.write("Dashboard de dados e KPIs.")
                 st.write("")
                 st.button("🚧 Em Construção", disabled=True, key="lok2")
 
+        # --- CARD 3: AGENTE DE AUDITORIA (NOVO) ---
         with col3:
             with st.container(border=True):
-                st.markdown("### 🛡️ Security")
+                st.markdown("### 🤖 Agente Auditor IA")
                 st.caption("Em Breve")
-                st.write("Scanner de vulnerabilidades.")
+                st.write("Análise de logs e Chat de Auditoria.")
                 st.write("")
+                # Futuramente, apontará para pages/IA_Auditor.py
                 st.button("🚧 Em Construção", disabled=True, key="lok3")
 
         # Sidebar Pós-Login
