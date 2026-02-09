@@ -1,129 +1,104 @@
 import streamlit as st
-from sqlalchemy import create_engine, text
+import sys
 
-# --- CONFIGURAÇÃO DA PÁGINA ---
+# --- CONFIGURAÇÃO DA PÁGINA (Deve ser a primeira linha) ---
 st.set_page_config(page_title="Portal Vilete Tech", page_icon="🔐", layout="centered")
+
+# --- MODO DE DEBUG (Tenta rodar e mostra o erro se falhar) ---
+try:
+    from sqlalchemy import create_engine, text
+    import psycopg2 # Verifica se a lib está instalada
+except ImportError as e:
+    st.error(f"❌ Erro Crítico: Biblioteca faltando! {e}")
+    st.info("Verifique se 'sqlalchemy' e 'psycopg2-binary' estão no requirements.txt")
+    st.stop()
 
 # --- INICIALIZAÇÃO DO ESTADO ---
 if 'autenticado' not in st.session_state:
     st.session_state.autenticado = False
 
-# --- FUNÇÃO DE CONEXÃO ---
+# --- FUNÇÕES (COM PROTEÇÃO EXTRA) ---
 def conectar_banco():
-    # Puxa a URI configurada nas Secrets do Streamlit Cloud
+    # Verifica se as secrets existem antes de tentar conectar
+    if "supabase" not in st.secrets:
+        st.error("❌ Erro: Configuração '[supabase]' não encontrada nas Secrets.")
+        st.stop()
     return create_engine(st.secrets["supabase"]["url_conexao"])
 
-# --- FUNÇÃO DE LOGIN ---
 def validar_login(usuario, senha):
     try:
         engine = conectar_banco()
         with engine.connect() as conn:
-            # Busca usuário ativo com senha correspondente
-            query = text("""
-                SELECT nome_exibicao, projeto_migrador 
-                FROM tb_usuarios 
-                WHERE usuario = :u AND senha = :p AND ativo = true
-            """)
+            query = text("SELECT nome_exibicao, projeto_migrador FROM tb_usuarios WHERE usuario = :u AND senha = :p AND ativo = true")
             return conn.execute(query, {"u": usuario, "p": senha}).fetchone()
     except Exception as e:
-        st.error(f"Erro ao validar login: {e}")
+        st.error(f"⚠️ Erro de Conexão com Banco: {e}")
         return None
 
-# --- FUNÇÃO DE CADASTRO ---
 def criar_usuario(nome, user, senha):
     try:
         engine = conectar_banco()
         with engine.connect() as conn:
-            # Verifica se o usuário já existe no banco
             check = conn.execute(text("SELECT id FROM tb_usuarios WHERE usuario = :u"), {"u": user}).fetchone()
-            if check:
-                return False, "Este usuário já está cadastrado."
+            if check: return False, "Usuário já existe."
             
-            # Insere o novo usuário (projeto_migrador inicia como False por segurança)
-            query = text("""
-                INSERT INTO tb_usuarios (nome_exibicao, usuario, senha, projeto_migrador, ativo) 
-                VALUES (:n, :u, :p, false, true)
-            """)
+            query = text("INSERT INTO tb_usuarios (nome_exibicao, usuario, senha, projeto_migrador, ativo) VALUES (:n, :u, :p, false, true)")
             conn.execute(query, {"n": nome, "u": user, "p": senha})
             conn.commit()
-            return True, "Cadastro realizado com sucesso! Solicite ao admin a liberação dos sistemas."
+            return True, "Cadastro realizado!"
     except Exception as e:
-        return False, f"Erro técnico ao cadastrar: {e}"
+        return False, f"Erro ao cadastrar: {e}"
 
-# --- LÓGICA DE NAVEGAÇÃO ---
-
-# 1. TELA INICIAL (Não Autenticado)
-if not st.session_state.autenticado:
-    # Esconde a sidebar nativa do Streamlit para forçar o login
-    st.markdown("<style>section[data-testid='stSidebar'] {display: none;}</style>", unsafe_allow_html=True)
-    
-    st.markdown("<h1 style='text-align: center;'>🔐 Portal Vilete Tech</h1>", unsafe_allow_html=True)
-    
-    tab_login, tab_cadastro = st.tabs(["🔑 Acessar Portal", "📝 Criar Nova Conta"])
-    
-    with tab_login:
-        with st.form("form_login"):
-            u = st.text_input("Usuário")
-            p = st.text_input("Senha", type="password")
-            if st.form_submit_button("Entrar", use_container_width=True):
-                res = validar_login(u, p)
-                if res:
-                    st.session_state.autenticado = True
-                    st.session_state.nome = res[0]
-                    st.session_state.p1 = res[1] # Permissão do Migrador
-                    st.rerun()
-                else:
-                    st.error("Credenciais incorretas ou conta inativa.")
-
-    with tab_cadastro:
-        with st.form("form_registro"):
-            n_nome = st.text_input("Nome Completo")
-            n_user = st.text_input("Nome de Usuário")
-            n_pass = st.text_input("Crie uma Senha", type="password")
-            if st.form_submit_button("Finalizar Cadastro", use_container_width=True):
-                if n_nome and n_user and n_pass:
-                    ok, msg = criar_usuario(n_nome, n_user, n_pass)
+# --- INTERFACE PRINCIPAL ---
+def main():
+    if not st.session_state.autenticado:
+        # Esconde sidebar
+        st.markdown("<style>section[data-testid='stSidebar'] {display: none;}</style>", unsafe_allow_html=True)
+        
+        st.title("🔐 Portal Vilete Tech")
+        tab1, tab2 = st.tabs(["Login", "Cadastro"])
+        
+        with tab1:
+            with st.form("login"):
+                u = st.text_input("Usuário")
+                p = st.text_input("Senha", type="password")
+                if st.form_submit_button("Entrar", use_container_width=True):
+                    res = validar_login(u, p)
+                    if res:
+                        st.session_state.autenticado = True
+                        st.session_state.nome = res[0]
+                        st.session_state.p1 = res[1]
+                        st.rerun()
+                    else:
+                        st.error("Acesso negado.")
+        
+        with tab2:
+            with st.form("cadastro"):
+                n = st.text_input("Nome")
+                u = st.text_input("User")
+                p = st.text_input("Senha", type="password")
+                if st.form_submit_button("Criar Conta"):
+                    ok, msg = criar_usuario(n, u, p)
                     if ok: st.success(msg)
                     else: st.error(msg)
-                else:
-                    st.warning("Preencha todos os campos obrigatórios.")
-
-# 2. DASHBOARD PRINCIPAL (Autenticado)
-else:
-    st.title(f"🚀 Bem-vindo ao seu Portal, {st.session_state.nome}")
-    
-    # Configuração da Barra Lateral (Sidebar)
-    st.sidebar.title("🛠️ Menu de Navegação")
-    st.sidebar.success(f"Conectado como: {st.session_state.nome}")
-    
-    # Verifica permissão para mostrar o link do Migrador
-    if st.session_state.p1:
-        st.sidebar.page_link("pages/Script.py", label="Abrir Migrador SQL", icon="🧰")
     else:
-        st.sidebar.warning("Migrador: Aguardando Liberação")
-
-    st.sidebar.divider()
-    if st.sidebar.button("🚪 Sair do Portal"):
-        st.session_state.autenticado = False
-        st.rerun()
-
-    # Cards de Status no Portal
-    st.markdown("---")
-    c1, c2, c3 = st.columns(3)
-    
-    with c1:
-        st.info("### 🧰 Migrador SQL")
+        st.title(f"🚀 Olá, {st.session_state.nome}")
+        st.sidebar.success(f"Logado: {st.session_state.nome}")
+        
+        # Link para o Migrador
         if st.session_state.p1:
-            st.success("Acesso: LIBERADO ✅")
-            st.caption("Acesse pela barra lateral 👈")
+            st.sidebar.page_link("pages/Script.py", label="Abrir Migrador SQL", icon="🧰")
         else:
-            st.warning("Acesso: BLOQUEADO 🔒")
-            st.caption("Contate o administrador para liberar.")
+            st.sidebar.warning("Sem acesso ao Migrador")
+            
+        if st.sidebar.button("Sair"):
+            st.session_state.autenticado = False
+            st.rerun()
 
-    with c2:
-        st.write("### 📊 Projeto 2")
-        st.write("🏗️ Em breve...")
-
-    with c3:
-        st.write("### 🛡️ Projeto 3")
-        st.write("🏗️ Em breve...")
+# --- PONTO DE PARTIDA SEGURO ---
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        st.error("❌ Ocorreu um erro inesperado na aplicação:")
+        st.code(str(e))

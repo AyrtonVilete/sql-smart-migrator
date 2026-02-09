@@ -1,10 +1,9 @@
 # Para instalar todas as dependências: pip install -r requirements.txt
 
-streamlit
+streamlit>=1.31.0
 pandas
 sqlalchemy
 psycopg2-binary
-google-auth-oauthlib
-google-auth-httplib2
 google-api-python-client
-pyodbc
+google-auth-httplib2
+google-auth-oauthlib
