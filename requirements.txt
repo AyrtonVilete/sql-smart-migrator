@@ -7,4 +7,4 @@ psycopg2-binary
 google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
-google-generativeai>=0.7.0
+google-generativeai>=0.7.2
