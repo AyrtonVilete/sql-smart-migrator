@@ -31,18 +31,19 @@ def configurar_gemini():
 
 def consultar_ia(pergunta):
     try:
-        # Tenta o modelo Flash (Rápido e Gratuito)
-        model = genai.GenerativeModel('gemini-pro')
+        # TENTATIVA 1: Modelo Flash (Mais rápido e novo)
+        model = genai.GenerativeModel('gemini-1.5-flash')
         response = model.generate_content(pergunta)
         return response.text
     except Exception as e:
-        # Se der erro, tenta o modelo Pro como fallback
+        # TENTATIVA 2 (Fallback): Tenta o Gemini Pro antigo se o Flash falhar
         try:
             model = genai.GenerativeModel('gemini-pro')
             response = model.generate_content(pergunta)
             return response.text
-        except:
-            return f"Erro na IA: {e}"
+        except Exception as e2:
+            # Se ambos falharem, mostra o erro original
+            return f"Erro Crítico na IA: {e}"
 
 # --- INTERFACE ---
 st.title("🤖 Agente Auditor V-Nexus")
