@@ -137,16 +137,25 @@ def render_inputs(titulo, k):
 
     return tipo, drv, host, port, db, user, pwd
 
-# --- SIDEBAR ---
+# --- SIDEBAR ATUALIZADA ---
 with st.sidebar:
     st.header("☁️ Google Drive")
+    
+    # Botão de Teste do Google
     if st.button("📡 Testar Conexão Google"):
         srv, msg = autenticar_google_drive()
         if srv: 
             user = srv.about().get(fields="user").execute()
             st.success(f"Logado como: {user['user']['displayName']}")
         else: st.error(msg)
+    
     st.divider()
+
+    # --- NOVO BOTÃO DE VOLTAR ---
+    if st.button("⬅️ Voltar ao Menu Principal", use_container_width=True):
+        st.switch_page("Login.py")
+
+    st.markdown("---")
     st.caption("v3.0 - Cloud Edition")
 
 # --- PAINEL PRINCIPAL ---

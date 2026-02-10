@@ -118,9 +118,10 @@ def main():
                 st.markdown("Migração de bancos, backup em nuvem e gestão de dados.")
                 st.write("") # Espaçamento
                 
-                # Botão Largo (Padrão que você gostou)
+                # Botão Largo
                 if st.session_state.p1:
-                    st.page_link("pages/Script.py", label="🚀 Acessar Migrador", use_container_width=True)
+                    # AQUI ESTÁ A CORREÇÃO: Mudei de "pages/Script.py" para "pages/SQL_Migrator.py"
+                    st.page_link("pages/SQL_Migrator.py", label="🚀 Acessar Migrador", use_container_width=True)
                 else:
                     st.button("🔒 Acesso Bloqueado", disabled=True, use_container_width=True)
 
