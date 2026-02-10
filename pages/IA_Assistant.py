@@ -32,7 +32,7 @@ def configurar_gemini():
 def consultar_ia(pergunta):
     try:
         # Tenta o modelo Flash (Rápido e Gratuito)
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-pro')
         response = model.generate_content(pergunta)
         return response.text
     except Exception as e:
