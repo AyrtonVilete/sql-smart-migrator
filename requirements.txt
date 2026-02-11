@@ -2,6 +2,9 @@
 
 streamlit>=1.35.0
 pandas
+pyodbc
+pymysql
+pytest
 sqlalchemy
 psycopg2-binary
 google-api-python-client
