@@ -5,6 +5,7 @@ from sqlalchemy.engine import URL
 from datetime import datetime
 import os
 import json
+import socket 
 
 # --- BIBLIOTECAS GOOGLE OAUTH ---
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -13,15 +14,15 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-# --- 1. CONFIGURAÇÃO DA PÁGINA (ISSO TEM QUE SER A PRIMEIRA LINHA DO STREAMLIT) ---
+# --- 1. CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Migrador SQL - Cloud v3", layout="wide", page_icon="🧰")
 
-# --- 2. TRAVA DE SEGURANÇA (Vem depois da config) ---
+# --- 2. TRAVA DE SEGURANÇA ---
 if not st.session_state.get('autenticado'):
     st.error("🚫 Acesso negado! Por favor, faça login no Portal primeiro.")
-    st.stop() # Para o código aqui se não estiver logado
+    st.stop()
 
-# --- 3. VERIFICAÇÃO DE PERMISSÃO ESPECÍFICA ---
+# --- 3. VERIFICAÇÃO DE PERMISSÃO ---
 if not st.session_state.get('p1', False):
     st.warning("⚠️ Você não tem permissão para acessar o Migrador.")
     st.stop()
@@ -30,13 +31,22 @@ st.title("🧰 SQL Smart Migrator (v3 Cloud)")
 
 # --- CONFIGURAÇÃO DE CAMINHOS E SECRETS ---
 PASTA_CREDENCIAIS = "Credencials"
-# ... (O resto do seu código continua igual daqui para baixo) ...
 ARQUIVO_TOKEN = os.path.join(PASTA_CREDENCIAIS, "token.json") if os.path.exists(PASTA_CREDENCIAIS) else "token.json"
 ID_PADRAO_DRIVE = "1M2OZgy3MV8JcYyvMngVE5ZDEHChwmCR2" 
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
 
 DRIVERS_SQL_SERVER = ["ODBC Driver 17 for SQL Server", "ODBC Driver 18 for SQL Server", "SQL Server"]
 DEFAULT_PORTS = {"SQL Server": "1433", "MySQL": "3306", "PostgreSQL": "5432"}
+
+# --- NOVO: FUNÇÃO DE DIAGNÓSTICO DE REDE ---
+def testar_porta_rede(host, port, timeout=2):
+    """Verifica se a porta TCP está acessível antes de tentar login no banco."""
+    try:
+        port = int(port)
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except (socket.timeout, ConnectionRefusedError, OSError):
+        return False
 
 # --- FUNÇÕES GOOGLE ---
 def autenticar_google_drive():
@@ -74,7 +84,7 @@ def upload_para_drive(service, caminho_arquivo, nome_arquivo, id_pasta):
 
 # --- FUNÇÕES DE BANCO DE DADOS ---
 def montar_url_universal(tipo, driver_sql, host, port, db, user, pwd):
-    port = int(port) if port and str(port).isnumeric() else None # Pequena correção de segurança aqui
+    port = int(port) if port and str(port).isnumeric() else None 
     if tipo == "SQL Server":
         conn_str = f"DRIVER={{{driver_sql}}};SERVER={host},{port};DATABASE={db};UID={user};PWD={pwd};TrustServerCertificate=yes;"
         return URL.create("mssql+pyodbc", query={"odbc_connect": conn_str})
@@ -106,10 +116,11 @@ def listar_bancos_disponiveis(tipo, driver, host, port, user, pwd):
                 return [r[0] for r in res if r[0] not in bancos_sistema]
             return [r[0] for r in res]
     except Exception as e:
-        st.error(f"Erro ao listar: {e}")
-        return []
+        # Retorna None explicitamente para diferenciar de lista vazia
+        st.error(f"Erro de conexão SQL: {e}") 
+        return None 
 
-# --- COMPONENTE VISUAL DE INPUT ---
+# --- COMPONENTE VISUAL DE INPUT (MODIFICADO) ---
 def render_inputs(titulo, k):
     st.subheader(titulo)
     tipo = st.selectbox("Tecnologia", ["SQL Server", "MySQL", "PostgreSQL"], key=f"{k}_t")
@@ -126,9 +137,40 @@ def render_inputs(titulo, k):
     chave_lista = f"list_{k}"
     if chave_lista not in st.session_state: st.session_state[chave_lista] = []
 
+    # --- LÓGICA DO BOTÃO COM DIAGNÓSTICO ---
     if st.button(f"🔍 Listar Bancos", key=f"btn_l_{k}", use_container_width=True):
-        with st.spinner("Buscando..."):
-            st.session_state[chave_lista] = listar_bancos_disponiveis(tipo, drv, host, port, user, pwd)
+        with st.spinner("Conectando e buscando bancos..."):
+            resultado = listar_bancos_disponiveis(tipo, drv, host, port, user, pwd)
+            
+            if resultado is not None:
+                st.session_state[chave_lista] = resultado
+                st.success(f"{len(resultado)} bancos encontrados!")
+            else:
+                # SE FALHAR O SQL, RODAMOS O DIAGNÓSTICO DE REDE
+                st.session_state[chave_lista] = []
+                st.markdown("---")
+                st.warning("⚠️ Iniciando diagnóstico de rede automático...")
+                
+                porta_aberta = testar_porta_rede(host, port)
+                
+                if porta_aberta:
+                    st.info("""
+                    ✅ **Diagnóstico:** A porta está ABERTA e acessível.
+                    O problema provavelmente é **Usuário/Senha incorretos** ou o driver ODBC não está instalado corretamente.
+                    """)
+                else:
+                    st.error(f"""
+                    ⛔ **Diagnóstico Crítico:** A porta {port} está FECHADA ou INACESSÍVEL.
+                    O Firewall do servidor ou da rede está bloqueando a conexão.
+                    """)
+                    
+                    # Exibe solução para SQL Server no Windows
+                    if tipo == "SQL Server":
+                        with st.expander(f"💡 Solução Rápida (PowerShell)", expanded=True):
+                            st.caption("Execute no servidor como Administrador para liberar a porta:")
+                            st.code(f"""
+New-NetFirewallRule -DisplayName "SQL Server Port {port}" -Direction Inbound -LocalPort {port} -Protocol TCP -Action Allow
+                            """, language="powershell")
 
     if st.session_state[chave_lista]:
         db = st.selectbox("Selecione o Banco", st.session_state[chave_lista], key=f"{k}_db_s")
@@ -137,11 +179,9 @@ def render_inputs(titulo, k):
 
     return tipo, drv, host, port, db, user, pwd
 
-# --- SIDEBAR ATUALIZADA ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.header("☁️ Google Drive")
-    
-    # Botão de Teste do Google
     if st.button("📡 Testar Conexão Google"):
         srv, msg = autenticar_google_drive()
         if srv: 
@@ -150,13 +190,11 @@ with st.sidebar:
         else: st.error(msg)
     
     st.divider()
-
-    # --- NOVO BOTÃO DE VOLTAR ---
     if st.button("⬅️ Voltar ao Menu Principal", use_container_width=True):
         st.switch_page("Login.py")
 
     st.markdown("---")
-    st.caption("v3.0 - Cloud Edition")
+    st.caption("v3.1 - Cloud Edition + NetDiag")
 
 # --- PAINEL PRINCIPAL ---
 col_src, col_dst = st.columns(2)
