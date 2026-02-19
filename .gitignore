@@ -7,17 +7,27 @@ venv/
 *.sqlite
 backup_*.csv
 .DS_Store
+.streamlit/secrets.toml
+
+# Credenciais e Tokens
 client_secret.json
 token.json
 credentials.json
-credentials.lock
-__pycache__/
-*.pyc
-secrets.toml
+.env
+.env.local
+.env.*.local
+
+# Pasta de credenciais
+Credencials/
+
+# Logs
 *.log
 logs/
+
+# Backups e arquivos temporários
 *.bak
 *.backup
 *.swp
 *.swo
+*.tmp
 
