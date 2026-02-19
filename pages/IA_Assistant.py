@@ -39,7 +39,7 @@ def inicializar_modelo():
     # Inicia o modelo Flash (mais rápido para interações de chat)
     try:
         return genai.GenerativeModel(
-            model_name='gemini-1.5-flash',
+            model_name='gemini-1.0-pro',
             system_instruction=instrucao_sistema
         )
     except Exception as e:
