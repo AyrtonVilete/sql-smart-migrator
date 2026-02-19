@@ -31,23 +31,23 @@ def configurar_gemini():
 
 def consultar_ia(pergunta):
     try:
-        # TENTATIVA 1: Modelo Flash (Mais rápido e novo)
+        # TENTATIVA 1: Modelo Flash (Mais rápido e eficiente para tarefas diretas)
         model = genai.GenerativeModel('gemini-1.5-flash')
         response = model.generate_content(pergunta)
         return response.text
     except Exception as e:
-        # TENTATIVA 2 (Fallback): Tenta o Gemini Pro antigo se o Flash falhar
+        # TENTATIVA 2 (Fallback): Atualizado para o modelo Pro mais recente
         try:
-            model = genai.GenerativeModel('gemini-pro')
+            model = genai.GenerativeModel('gemini-1.5-pro')
             response = model.generate_content(pergunta)
             return response.text
         except Exception as e2:
-            # Se ambos falharem, mostra o erro original
-            return f"Erro Crítico na IA: {e}"
+            # Mostra o erro original e o erro do fallback para facilitar o suporte
+            return f"Erro Crítico na IA.\nFalha Flash: {e}\nFalha Pro: {e2}"
 
 # --- INTERFACE ---
 st.title("🤖 Agente Auditor V-Nexus")
-st.caption("Powered by Gemini 1.5 Flash")
+st.caption("Powered by Gemini 1.5 Flash & Pro")
 
 # Botão de Voltar
 if st.button("⬅️ Voltar ao Dashboard"):
@@ -66,13 +66,16 @@ if configurar_gemini():
         if st.button("🔍 Analisar com IA", type="primary"):
             if texto_usuario:
                 with st.spinner("O Agente está analisando os dados..."):
-                    # Prompt Engenheirado para QA
+                    # Prompt Engenheirado com delimitadores para segurança
                     prompt_sistema = f"""
                     Você é um Auditor Sênior de QA e Segurança. 
-                    Analise o seguinte conteúdo técnico com foco em vulnerabilidades, boas práticas e correção de erros.
+                    Analise o conteúdo técnico abaixo, delimitado por três crases (```), com foco em vulnerabilidades (como SQL Injection, XSS, etc.), boas práticas e correção de erros.
                     Se for um erro de banco de dados, explique a causa raiz e a solução SQL.
                     
-                    Conteúdo: {texto_usuario}
+                    Conteúdo para análise:
+                    ```
+                    {texto_usuario}
+                    ```
                     """
                     resposta = consultar_ia(prompt_sistema)
                     
