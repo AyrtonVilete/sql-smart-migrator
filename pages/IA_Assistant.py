@@ -1,13 +1,8 @@
 import streamlit as st
 import requests
-import google.generativeai as genai
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Agente Auditor IA", page_icon="🤖", layout="wide")
-
-# --- OPÇÃO 2: TESTE DO AMBIENTE FANTASMA ---
-# Isso vai exibir no topo da sua tela qual versão o servidor realmente está usando
-st.warning(f"🔍 DEBUG: A versão atual da biblioteca google-generativeai carregada pelo servidor é a: {genai.__version__}")
 
 # --- TRAVA DE SEGURANÇA ---
 if not st.session_state.get('autenticado'):
@@ -29,49 +24,44 @@ st.markdown("""
 if "mensagens_chat" not in st.session_state:
     st.session_state.mensagens_chat = []
 
-# --- OPÇÃO 1: CONSULTA DIRETA VIA API REST (PLANO NUCLEAR) ---
-def consultar_ia_direto(prompt_usuario, historico):
+# --- CONSULTA VIA API RENDER ---
+def consultar_ia_render(prompt_usuario, historico):
     try:
-        if "gemini" not in st.secrets:
-            return "⚠️ API Key do Gemini não configurada nas Secrets."
+        # URL da sua API no Render
+        url_api = "https://api-sql-migrator.onrender.com/chat"
+        
+        # Monta um mini-contexto para a API lembrar da conversa
+        # Pegamos apenas as últimas 4 mensagens para a requisição não ficar pesada
+        texto_historico = ""
+        for msg in historico[-4:]: 
+            papel = "Usuário" if msg["role"] == "user" else "IA"
+            texto_historico += f"{papel}: {msg['content']}\n"
             
-        api_key = st.secrets["gemini"]["api_key"]
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
-        
-        headers = {'Content-Type': 'application/json'}
-        
-        # Monta o histórico de conversa no formato exato que a API REST exige
-        conteudos = []
-        for msg in historico:
-            role = "model" if msg["role"] == "assistant" else "user"
-            conteudos.append({"role": role, "parts": [{"text": msg["content"]}]})
-        
-        # Adiciona a pergunta atual do usuário no final do array
-        conteudos.append({"role": "user", "parts": [{"text": prompt_usuario}]})
-        
-        # Monta o corpo da requisição com a instrução de sistema
+        # Junta o histórico com a pergunta atual
+        prompt_final = prompt_usuario
+        if texto_historico:
+            prompt_final = f"Contexto da conversa recente:\n{texto_historico}\n\nNova instrução/pergunta: {prompt_usuario}"
+
+        # Formato exato que o FastAPI está esperando
         payload = {
-            "systemInstruction": {
-                "parts": [{"text": "Você é um Especialista Sênior em QA e Segurança de Software. Analise os códigos, logs ou arquiteturas fornecidas com foco em vulnerabilidades (SQL Injection, XSS, etc) e boas práticas."}]
-            },
-            "contents": conteudos
+            "mensagem_usuario": prompt_final
         }
         
-        # Dispara a requisição HTTP direta
-        response = requests.post(url, headers=headers, json=payload)
+        # Dispara a requisição HTTP para o seu backend
+        response = requests.post(url_api, json=payload)
         
         if response.status_code == 200:
             dados = response.json()
-            return dados['candidates'][0]['content']['parts'][0]['text']
+            return dados['resposta'] # Pega a resposta limpa do JSON
         else:
-            return f"🚨 Erro na API do Google: Status {response.status_code}\nDetalhes: {response.text}"
+            return f"🚨 Erro na API do Render: Status {response.status_code}\nDetalhes: {response.text}"
             
     except Exception as e:
-        return f"🚨 Erro Crítico no Código: {e}"
+        return f"🚨 Erro Crítico de Comunicação com a API: {e}"
 
 # --- INTERFACE ---
-st.title("🤖 Agente Auditor V-Nexus (Modo REST API)")
-st.caption("Chat interativo à prova de falhas de biblioteca - Powered by Gemini 1.5")
+st.title("🤖 Agente Auditor V-Nexus (Via Nuvem)")
+st.caption("Chat interativo conectado ao Backend no Render")
 
 if st.button("⬅️ Voltar ao Dashboard"):
     st.switch_page("Login.py")
@@ -105,10 +95,10 @@ with col_chat:
         with st.chat_message("user"):
             st.markdown(prompt)
         
-        # Spinner enquanto aguarda a resposta da API REST
+        # Spinner enquanto aguarda a resposta da API Render
         with st.chat_message("assistant"):
-            with st.spinner("Acessando diretamente os servidores da IA..."):
-                resposta_texto = consultar_ia_direto(prompt, st.session_state.mensagens_chat)
+            with st.spinner("Processando no servidor da nuvem..."):
+                resposta_texto = consultar_ia_render(prompt, st.session_state.mensagens_chat)
                 st.markdown(resposta_texto)
         
         # Salva as duas mensagens no histórico da sessão
