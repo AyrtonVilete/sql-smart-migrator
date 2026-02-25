@@ -6,6 +6,7 @@ from datetime import datetime
 import os
 import json
 import socket 
+import requests
 
 # --- BIBLIOTECAS GOOGLE OAUTH ---
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -179,6 +180,30 @@ New-NetFirewallRule -DisplayName "SQL Server Port {port}" -Direction Inbound -Lo
 
     return tipo, drv, host, port, db, user, pwd
 
+def consultar_ia_render(prompt_usuario, historico):
+    try:
+        # A URL mágica da sua API que já está na nuvem
+        url_api = "https://api-sql-migrator.onrender.com/chat"
+        
+        texto_historico = ""
+        for msg in historico[-4:]: 
+            papel = "Usuário" if msg["role"] == "user" else "IA"
+            texto_historico += f"{papel}: {msg['content']}\n"
+            
+        prompt_final = prompt_usuario
+        if texto_historico:
+            prompt_final = f"Contexto da conversa recente:\n{texto_historico}\n\nNova instrução/pergunta: {prompt_usuario}"
+
+        response = requests.post(url_api, json={"mensagem_usuario": prompt_final})
+        
+        if response.status_code == 200:
+            return response.json()['resposta']
+        else:
+            return f"🚨 Erro na API do Render: Status {response.status_code}"
+            
+    except Exception as e:
+        return f"🚨 Erro Crítico de Comunicação com a API: {e}"
+
 # --- SIDEBAR ---
 with st.sidebar:
     st.header("☁️ Google Drive")
@@ -190,90 +215,45 @@ with st.sidebar:
         else: st.error(msg)
     
     st.divider()
+    
+    # --- NOVO: AGENTE DE IA NA SIDEBAR ---
+    st.header("🤖 Assistente de IA")
+    st.caption("Ajuda rápida com scripts e análises.")
+
+    if "mensagens_chat" not in st.session_state:
+        st.session_state.mensagens_chat = []
+
+    # Cria uma caixa com altura fixa e barra de rolagem (Fica muito mais limpo!)
+    caixa_chat = st.container(height=350)
+
+    with caixa_chat:
+        for msg in st.session_state.mensagens_chat:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+
+    # O input do chat fixado embaixo da caixa
+    if prompt := st.chat_input("Dúvidas com SQL?", key="chat_sidebar"):
+        
+        # 1. Salva e mostra a mensagem do usuário
+        st.session_state.mensagens_chat.append({"role": "user", "content": prompt})
+        with caixa_chat:
+            with st.chat_message("user"):
+                st.markdown(prompt)
+                
+            # 2. Mostra o balão da IA carregando
+            with st.chat_message("assistant"):
+                with st.spinner("Consultando a nuvem..."):
+                    # Manda para o Render
+                    resposta_texto = consultar_ia_render(prompt, st.session_state.mensagens_chat[:-1])
+                    st.markdown(resposta_texto)
+                    
+        # 3. Salva a resposta da IA no histórico
+        st.session_state.mensagens_chat.append({"role": "assistant", "content": resposta_texto})
+
+    st.divider()
+    
     if st.button("⬅️ Voltar ao Menu Principal", use_container_width=True):
         st.switch_page("Login.py")
 
     st.markdown("---")
-    st.caption("v3.1 - Cloud Edition + NetDiag")
-
-# --- PAINEL PRINCIPAL ---
-col_src, col_dst = st.columns(2)
-with col_src: src_data = render_inputs("1. Origem ", "src")
-with col_dst: dst_data = render_inputs("2. Destino ", "dst")
-
-st.divider()
-st.subheader("🛠️ Configuração da Migração")
-c1, c2, c3 = st.columns(3)
-with c1: tabela = st.text_input("Nome da Tabela")
-with c2: pk = st.text_input("Coluna ID (Para modo Inteligente)")
-with c3: modo = st.selectbox("Estratégia", ["Inteligente (Filtrar Existentes)", "Append (Adicionar)", "Replace (Substituir)"])
-
-st.markdown("---")
-
-# --- BOTÕES DE AÇÃO ---
-col_a, col_b, col_c = st.columns(3)
-
-# 1. Backup Local
-with col_a:
-    if st.button("💾 Backup Local (CSV)", use_container_width=True):
-        if not tabela: st.error("Defina a tabela.")
-        else:
-            t, d, h, p, db, u, pw = src_data
-            url = montar_url_universal(t, d, h, p, db, u, pw)
-            ok, err, eng = testar_conexao(url)
-            if ok:
-                df = pd.read_sql_table(tabela, eng)
-                csv = df.to_csv(index=False, sep=';').encode('utf-8')
-                st.download_button("Clique para Baixar", csv, f"bkp_{tabela}.csv", "text/csv")
-            else: st.error(err)
-
-# 2. Backup Nuvem
-with col_b:
-    if st.button("☁️ Backup Drive", use_container_width=True):
-        if not tabela: st.error("Defina a tabela.")
-        else:
-            with st.spinner("Fazendo upload..."):
-                t, d, h, p, db, u, pw = src_data
-                url = montar_url_universal(t, d, h, p, db, u, pw)
-                ok, err, eng = testar_conexao(url)
-                if ok:
-                    df = pd.read_sql_table(tabela, eng)
-                    fn = f"cloud_bkp_{tabela}.csv"
-                    df.to_csv(fn, index=False, sep=';')
-                    srv, msg = autenticar_google_drive()
-                    if srv:
-                        ok_up, res = upload_para_drive(srv, fn, fn, ID_PADRAO_DRIVE)
-                        if ok_up: st.success(f"Upload OK! ID: {res}")
-                        else: st.error(res)
-                        if os.path.exists(fn): os.remove(fn)
-                    else: st.error(msg)
-
-# 3. Migração Total
-with col_c:
-    if st.button("🚀 Iniciar Migração", type="primary", use_container_width=True):
-        if not (tabela and src_data[4] and dst_data[4]): st.error("Preencha todos os campos.")
-        else:
-            with st.status("Executando migração...") as s:
-                # Conexões
-                url_s = montar_url_universal(*src_data)
-                url_d = montar_url_universal(*dst_data)
-                _, _, eng_s = testar_conexao(url_s)
-                _, _, eng_d = testar_conexao(url_d)
-                
-                # Extração
-                df = pd.read_sql_table(tabela, eng_s)
-                s.write(f"📖 {len(df)} registros extraídos.")
-                
-                # Lógica Inteligente
-                if "Inteligente" in modo and pk:
-                    try:
-                        existentes = pd.read_sql(f"SELECT {pk} FROM {tabela}", eng_d)[pk].tolist()
-                        df = df[~df[pk].isin(existentes)]
-                        s.write(f"🕵️ Filtrados: {len(df)} novos registros para inserir.")
-                    except: s.write("⚠️ Tabela destino não existe, ignorando filtro.")
-
-                # Carga
-                metodo = "replace" if "Replace" in modo else "append"
-                df.to_sql(tabela, eng_d, if_exists=metodo, index=False, chunksize=1000)
-                s.update(label="Migração Concluída!", state="complete")
-                st.balloons()
+    st.caption("v4.0 - Cloud Edition + NetDiag + IA Integrada")

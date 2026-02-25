@@ -158,7 +158,7 @@ def main():
         with c2:
             with st.container(border=True):
                 st.markdown("### 🤖 Agente Auditor")
-                st.markdown("<p>Inteligência Artificial (Gemini 1.5) para análise de logs, detecção de vulnerabilidades e chat técnico de QA.</p>", unsafe_allow_html=True)
+                st.markdown("<p>Inteligência Artificial (Gemini 1.5) para análise de logs, detecção de vulnerabilidades, auxilio com comandos SQL e chat técnico.</p>", unsafe_allow_html=True)
                 
                 st.write("") 
                 
