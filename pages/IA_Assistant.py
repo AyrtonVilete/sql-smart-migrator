@@ -4,15 +4,6 @@ import requests
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Agente Auditor IA", page_icon="🤖", layout="wide")
 
-# --- TRAVA DE SEGURANÇA ---
-if not st.session_state.get('autenticado'):
-    st.error("🚫 Acesso negado! Faça login no Portal.")
-    st.stop()
-
-if not st.session_state.get('p_ia', False):
-    st.warning("⚠️ Seu usuário não tem permissão para acessar o Agente IA.")
-    st.stop()
-
 # --- CSS PARA ESCONDER MENU LATERAL AUTOMÁTICO ---
 st.markdown("""
     <style>
@@ -63,7 +54,7 @@ def consultar_ia_render(prompt_usuario, historico):
 st.title("🤖 Agente Auditor V-Nexus (Via Nuvem)")
 st.caption("Chat interativo conectado ao Backend no Render")
 
-if st.button("⬅️ Voltar ao Dashboard"):
+if st.button("⬅️ Voltar ao Portal"):
     st.switch_page("Login.py")
 
 st.divider()
