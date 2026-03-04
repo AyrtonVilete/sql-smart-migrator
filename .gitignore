@@ -13,6 +13,7 @@ backup_*.csv
 client_secret.json
 token.json
 credentials.json
+token.pickle
 .env
 .env.local
 .env.*.local

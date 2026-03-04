@@ -4,17 +4,16 @@ from sqlalchemy import create_engine, text, inspect
 from sqlalchemy.engine import URL
 from datetime import datetime
 import os
-import io
-import json
+import pickle
 import socket 
 import requests
+import io
 
 # --- BIBLIOTECAS GOOGLE OAUTH ---
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
+from googleapiclient.http import MediaIoBaseUpload
 
 # ==========================================
 # 1. CONFIGURAÇÃO 
@@ -25,8 +24,12 @@ st.set_page_config(page_title="V-Nexus SQL Smart Migrator", layout="wide", page_
 if "mensagens_chat" not in st.session_state:
     st.session_state.mensagens_chat = []
 
-# --- NOVA CONFIGURAÇÃO CLOUD (BRIDGE API) ---
-URL_API_DRIVE = "https://v-nexus-drive.onrender.com/upload"
+# --- NOVA CONFIGURAÇÃO CLOUD (DIRETO GOOGLE DRIVE) ---
+CREDENTIALS_PATH = os.path.join('credentials', 'credentials.json')
+TOKEN_PATH = os.path.join('credentials', 'token.pickle')
+
+# Escopo necessário para ver/gerenciar arquivos no Drive
+SCOPES = ['https://www.googleapis.com/auth/drive.file']
 ID_PADRAO_DRIVE = "1M2OZgy3MV8JcYyvMngVE5ZDEHChwmCR2" 
 
 # Variáveis Auxiliares de Banco
@@ -45,29 +48,78 @@ def testar_porta_rede(host, port, timeout=2):
     except (socket.timeout, ConnectionRefusedError, OSError):
         return False
 
-# --- NOVA FUNÇÃO DE UPLOAD VIA BRIDGE API (RENDER) ---
-def enviar_para_bridge_drive(df, nome_tabela):
-    """Envia o DataFrame para a API Bridge no Render, que faz o upload para o Drive."""
-    try:
-        # 1. Transforma o DataFrame em CSV diretamente na memória
-        csv_buffer = io.BytesIO()
-        df.to_csv(csv_buffer, index=False, sep=';', encoding='utf-8')
-        csv_buffer.seek(0)
-        
-        # 2. Prepara o nome do arquivo com data e hora
-        timestamp = datetime.now().strftime("%d%m%Y_%H%M")
-        nome_arquivo = f"bkp_{nome_tabela}_{timestamp}.csv"
-        
-        # 3. Dispara a requisição POST para a sua API no Render
-        files = {"file": (nome_arquivo, csv_buffer, "text/csv")}
-        data = {"folder_id": ID_PADRAO_DRIVE}
-        
-        response = requests.post(URL_API_DRIVE, files=files, data=data, timeout=60)
-        
-        if response.status_code == 200:
-            return True, response.json().get("file_id")
+# --- FUNÇÕES DE AUTENTICAÇÃO E ENVIO DIRETO PARA O DRIVE ---
+def validate_google_auth():
+    """Valida ou cria o token de acesso do Google Drive localmente."""
+    creds = None
+    if os.path.exists(TOKEN_PATH):
+        with open(TOKEN_PATH, 'rb') as token:
+            creds = pickle.load(token)
+            
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
         else:
-            return False, f"Erro na API Bridge: {response.text}"
+            if not os.path.exists(CREDENTIALS_PATH):
+                return False, f"Erro: Arquivo não encontrado em {CREDENTIALS_PATH}!"
+            
+            flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_PATH, SCOPES)
+            creds = flow.run_local_server(port=8080, prompt='select_account')
+            
+        with open(TOKEN_PATH, 'wb') as token:
+            pickle.dump(creds, token)
+
+    try:
+        service = build('drive', 'v3', credentials=creds)
+        about = service.about().get(fields="user").execute()
+        user_email = about['user']['emailAddress']
+        return True, f"Google Drive Conectado! ({user_email})"
+    except Exception as e:
+        return False, f"Falha na comunicação: {str(e)}"
+
+def fazer_upload_direto_google(df, nome_tabela):
+    """
+    Converte o DataFrame em CSV e envia direto para o Google Drive.
+    """
+    creds = None
+    if os.path.exists(TOKEN_PATH):
+        with open(TOKEN_PATH, 'rb') as token:
+            creds = pickle.load(token)
+    
+    if not creds or not creds.valid:
+        return False, "Credenciais inválidas. Por favor, valide o acesso na Sidebar primeiro."
+
+    try:
+        service = build('drive', 'v3', credentials=creds)
+
+        # 1. Converter DataFrame para CSV em memória
+        output = io.StringIO()
+        df.to_csv(output, index=False, encoding='utf-8')
+        output.seek(0)
+        
+        # 2. Configurar metadados do arquivo (usando a variável global de ID que você definiu)
+        file_metadata = {
+            'name': f'backup_{nome_tabela}.csv',
+            'mimeType': 'text/csv',
+            'parents': [ID_PADRAO_DRIVE]  
+        }
+
+        # 3. Preparar o upload
+        media = MediaIoBaseUpload(
+            io.BytesIO(output.getvalue().encode('utf-8')), 
+            mimetype='text/csv', 
+            resumable=True
+        )
+
+        # 4. Executar o upload
+        file = service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields='id'
+        ).execute()
+
+        return True, file.get('id')
+
     except Exception as e:
         return False, str(e)
 
@@ -113,6 +165,38 @@ def listar_tabelas(eng):
         return insp.get_table_names()
     except Exception as e:
         return []
+    
+def obter_chave_primaria(eng, nome_tabela):
+    """Busca a chave primária da tabela automaticamente no banco de dados."""
+    try:
+        insp = inspect(eng)
+        pk_info = insp.get_pk_constraint(nome_tabela)
+        
+        # Verifica se encontrou a PK e se ela tem colunas
+        if pk_info and 'constrained_columns' in pk_info and len(pk_info['constrained_columns']) > 0:
+            return pk_info['constrained_columns'][0] # Retorna o nome da coluna (ex: id, cpf)
+    except Exception:
+        pass
+    return "" # Retorna vazio se não achar ou for uma view
+
+def obter_schema_banco(eng):
+    """Lê as tabelas e colunas do banco para criar o 'Mapa' para a IA."""
+    try:
+        insp = inspect(eng)
+        schema_texto = "Estrutura do Banco de Dados:\n"
+        
+        # Lê as tabelas (limitei a 50 para não estourar o limite de leitura da IA em bancos gigantes)
+        tabelas = insp.get_table_names()[:50] 
+        
+        for tabela in tabelas:
+            colunas = insp.get_columns(tabela)
+            # Pega o nome e o tipo da coluna para a IA ser mais precisa
+            detalhes_colunas = [f"{c['name']} ({str(c['type'])})" for c in colunas]
+            schema_texto += f"- Tabela '{tabela}': {', '.join(detalhes_colunas)}\n"
+            
+        return schema_texto
+    except Exception as e:
+        return f"Erro ao ler o schema do banco: {e}"
 
 def consultar_ia_render(prompt_usuario, historico):
     try:
@@ -200,16 +284,14 @@ def aplicar_transformacoes(df, config_limpeza):
 def desenhar_sidebar():
     with st.sidebar:
         st.header("☁️ V-Nexus Cloud")
-        if st.button("📡 Verificar Status Bridge API"):
-            try:
-                # Chama o "/" da sua API para ver se está online
-                res = requests.get("https://v-nexus-drive.onrender.com/", timeout=10)
-                if res.status_code == 200:
-                    st.success("API Bridge Online! 🚀")
+        
+        if st.button("🔑 Autenticar Conta Google", use_container_width=True):
+            with st.spinner("Validando acesso ao Drive..."):
+                sucesso, mensagem = validate_google_auth()
+                if sucesso:
+                    st.success(mensagem)
                 else:
-                    st.error("API respondeu com erro.")
-            except:
-                st.error("API Offline ou em modo de espera (Render).")
+                    st.error(mensagem)
         
         st.divider()
         
@@ -226,14 +308,13 @@ def desenhar_sidebar():
 
         # Input do chat fica fixo abaixo da caixa
         if prompt := st.chat_input("Dúvidas com SQL?", key="chat_sidebar"):
-            # 1. Salva a mensagem do usuário
             st.session_state.mensagens_chat.append({"role": "user", "content": prompt})
             with caixa_chat:
                 with st.chat_message("user"):
                     st.markdown(prompt)
-                # 2. Mostra carregamento e chama API
+                # 2. Mostra carregamento e chama API da IA (Render)
                 with st.chat_message("assistant"):
-                    with st.spinner("Consultando nuvem..."):
+                    with st.spinner("Consultando IA..."):
                         resposta_texto = consultar_ia_render(prompt, st.session_state.mensagens_chat[:-1])
                         st.markdown(resposta_texto)
             # 3. Salva a resposta da IA
@@ -241,7 +322,7 @@ def desenhar_sidebar():
 
         st.divider()
         if st.button("⬅️ Voltar ao Portal", use_container_width=True):
-            st.switch_page("Login.py") # Mantive o nome Login.py caso este seja o arquivo principal
+            st.switch_page("Login.py") 
 
         st.caption("v4.0 - Cloud Edition + IA Integrada")
 
@@ -280,39 +361,51 @@ def desenhar_painel_principal():
         # 1. Tenta conectar na origem para puxar as tabelas
         tabelas_disponiveis = []
         eng_origem_temp = None
-        if src_data[4]: # Se o banco de origem já estiver definido
+        if src_data[4]:
             url_s = montar_url_universal(*src_data)
             ok_s, _, eng_origem_temp = testar_conexao(url_s)
             if ok_s:
                 tabelas_disponiveis = listar_tabelas(eng_origem_temp)
 
-        # --- A CHECKBOX LIVRE ---
-        # Agora ela NUNCA fica bloqueada. O usuário tem total controle.
         usa_lista = st.checkbox("📋 Selecionar tabela da lista (Desmarque para digitar manualmente)", value=True)
 
-        # 2. Interface de Seleção (Alinhamento rigoroso no topo das colunas)
         c1, c2, c3 = st.columns(3)
+        
+        tabela_origem = "" # Inicia vazio
         
         with c1: 
             if usa_lista:
                 if tabelas_disponiveis:
                     tabela_origem = st.selectbox("Tabela de Origem", tabelas_disponiveis)
                 else:
-                    # Dropdown informativo se o banco ainda não foi selecionado
-                    tabela_origem_dummy = st.selectbox("Tabela de Origem", ["⚠️ Conecte o banco de origem para listar..."], disabled=True)
-                    tabela_origem = "" # Variável limpa para não bugar o botão de Preview
+                    st.selectbox("Tabela de Origem", ["⚠️ Conecte o banco de origem..."], disabled=True)
             else:
                 tabela_origem = st.text_input("Tabela de Origem (Manual)")
                 
             tabela_destino = st.text_input("Tabela no Destino", value=tabela_origem)
             
+        # --- BUSCA AUTOMÁTICA DA CHAVE PRIMÁRIA ---
+        pk_automatica = ""
+        if tabela_origem and eng_origem_temp:
+            pk_automatica = obter_chave_primaria(eng_origem_temp, tabela_origem)
+            
         with c2: 
-            pk = st.text_input("Coluna ID (Para Inteligente)", help="Chave primária para evitar duplicidade.")
+            # O campo agora recebe o valor do banco e fica bloqueado (disabled=True)
+            pk = st.text_input(
+                "Coluna ID (Para Inteligente)", 
+                value=pk_automatica, 
+                disabled=True, 
+                help="A Chave Primária é detectada automaticamente do banco de dados."
+            )
+            
+            # Pequeno aviso visual se a tabela não tiver PK
+            if tabela_origem and not pk_automatica:
+                st.caption("⚠️ Nenhuma PK detectada nesta tabela.")
             
         with c3: 
             modo = st.selectbox("Estratégia de Migração", ["Inteligente (Filtrar Existentes)", "Append (Adicionar)", "Replace (Substituir)"])
 
-        # 3. Área de Preview (Largura Total - Fora das colunas)
+        # 3. Área de Preview 
         st.write("") 
         
         if tabela_origem and eng_origem_temp:
@@ -337,9 +430,8 @@ def desenhar_painel_principal():
         st.info("💡 **Modo Avançado:** Escreva um SELECT para filtrar, juntar (JOIN) ou renomear colunas na origem. Apenas o resultado será migrado/salvo.")
         query_sql = st.text_area("Sua Query (SELECT ...)", placeholder="Ex: SELECT id, nome, email FROM clientes WHERE status = 'ativo'")
         
-        # Botão mágico de Pré-visualização
         if st.button("👁️ Visualizar Dados (Preview)", use_container_width=True):
-            if query_sql and src_data[4]: # Checa se tem query e banco selecionado
+            if query_sql and src_data[4]: 
                 try:
                     url_s = montar_url_universal(*src_data)
                     ok, err, eng_s = testar_conexao(url_s)
@@ -347,7 +439,7 @@ def desenhar_painel_principal():
                         with st.spinner("Executando query na origem..."):
                             df_preview = pd.read_sql(query_sql, eng_s)
                             st.success(f"✅ Sucesso! A query retornou {len(df_preview)} linhas.")
-                            st.dataframe(df_preview.head(50), use_container_width=True) # Mostra no máximo 50 para não pesar a tela
+                            st.dataframe(df_preview.head(50), use_container_width=True)
                     else:
                         st.error(f"Erro de conexão na origem: {err}")
                 except Exception as e:
@@ -361,7 +453,7 @@ def desenhar_painel_principal():
         with c3: modo = st.selectbox("Estratégia", ["Inteligente (Filtrar Existentes)", "Append (Adicionar)", "Replace (Substituir)"])
 
     # ==========================================
-    # --- NOVO: PAINEL DE TRATAMENTO DE DADOS ---
+    # --- PAINEL DE TRATAMENTO DE DADOS ---
     # ==========================================
     st.markdown("---")
     st.subheader("🧹 Tratamento e Limpeza (Opcional)")
@@ -422,7 +514,7 @@ def desenhar_painel_principal():
             if not tabela_destino: 
                 st.error("Defina o nome da tabela de destino.")
             else:
-                with st.spinner("📦 Extraindo e enviando para nuvem..."):
+                with st.spinner("📦 Extraindo e enviando para o Google Drive..."):
                     t, d, h, p, db, u, pw = src_data
                     url = montar_url_universal(t, d, h, p, db, u, pw)
                     ok, err, eng = testar_conexao(url)
@@ -431,8 +523,8 @@ def desenhar_painel_principal():
                             # Extrai os dados
                             df = obter_dataframe_origem(eng)
                             
-                            # Envia para a Bridge API
-                            sucesso, resultado = enviar_para_bridge_drive(df, tabela_destino)
+                            # Envia direto para a API do Google Drive
+                            sucesso, resultado = fazer_upload_direto_google(df, tabela_destino)
                             
                             if sucesso:
                                 st.success(f"Upload concluído! Arquivo ID: {resultado}")
