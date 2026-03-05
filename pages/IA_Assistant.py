@@ -21,29 +21,24 @@ def consultar_ia_render(prompt_usuario, historico):
         # URL da sua API no Render
         url_api = "https://api-sql-migrator.onrender.com/chat"
         
-        # Monta um mini-contexto para a API lembrar da conversa
-        # Pegamos apenas as últimas 4 mensagens para a requisição não ficar pesada
         texto_historico = ""
         for msg in historico[-4:]: 
             papel = "Usuário" if msg["role"] == "user" else "IA"
             texto_historico += f"{papel}: {msg['content']}\n"
-            
-        # Junta o histórico com a pergunta atual
+
         prompt_final = prompt_usuario
         if texto_historico:
             prompt_final = f"Contexto da conversa recente:\n{texto_historico}\n\nNova instrução/pergunta: {prompt_usuario}"
 
-        # Formato exato que o FastAPI está esperando
         payload = {
             "mensagem_usuario": prompt_final
         }
         
-        # Dispara a requisição HTTP para o seu backend
         response = requests.post(url_api, json=payload)
         
         if response.status_code == 200:
             dados = response.json()
-            return dados['resposta'] # Pega a resposta limpa do JSON
+            return dados['resposta']
         else:
             return f"🚨 Erro na API do Render: Status {response.status_code}\nDetalhes: {response.text}"
             
@@ -74,24 +69,19 @@ with col_info:
             st.rerun()
 
 with col_chat:
-    # Exibe o histórico de mensagens na tela
     for msg in st.session_state.mensagens_chat:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    # Campo de entrada de texto
     if prompt := st.chat_input("Cole seu log, código ou faça uma pergunta técnica..."):
         
-        # Exibe a mensagem do usuário
         with st.chat_message("user"):
             st.markdown(prompt)
         
-        # Spinner enquanto aguarda a resposta da API Render
         with st.chat_message("assistant"):
             with st.spinner("Processando no servidor da nuvem..."):
                 resposta_texto = consultar_ia_render(prompt, st.session_state.mensagens_chat)
                 st.markdown(resposta_texto)
         
-        # Salva as duas mensagens no histórico da sessão
         st.session_state.mensagens_chat.append({"role": "user", "content": prompt})
         st.session_state.mensagens_chat.append({"role": "assistant", "content": resposta_texto})

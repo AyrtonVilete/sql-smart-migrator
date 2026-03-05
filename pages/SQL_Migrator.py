@@ -174,10 +174,10 @@ def obter_chave_primaria(eng, nome_tabela):
         
         # Verifica se encontrou a PK e se ela tem colunas
         if pk_info and 'constrained_columns' in pk_info and len(pk_info['constrained_columns']) > 0:
-            return pk_info['constrained_columns'][0] # Retorna o nome da coluna (ex: id, cpf)
+            return pk_info['constrained_columns'][0]
     except Exception:
         pass
-    return "" # Retorna vazio se não achar ou for uma view
+    return ""
 
 def obter_schema_banco(eng):
     """Lê as tabelas e colunas do banco para criar o 'Mapa' para a IA."""
@@ -185,12 +185,10 @@ def obter_schema_banco(eng):
         insp = inspect(eng)
         schema_texto = "Estrutura do Banco de Dados:\n"
         
-        # Lê as tabelas (limitei a 50 para não estourar o limite de leitura da IA em bancos gigantes)
-        tabelas = insp.get_table_names()[:50] 
+        tabelas = insp.get_table_names() 
         
         for tabela in tabelas:
             colunas = insp.get_columns(tabela)
-            # Pega o nome e o tipo da coluna para a IA ser mais precisa
             detalhes_colunas = [f"{c['name']} ({str(c['type'])})" for c in colunas]
             schema_texto += f"- Tabela '{tabela}': {', '.join(detalhes_colunas)}\n"
             
@@ -295,29 +293,26 @@ def desenhar_sidebar():
         
         st.divider()
         
-        # Agente de IA na Sidebar
         st.header("🤖 Assistente de IA")
         st.caption("Ajuda rápida com scripts e análises.")
 
-        # Container isolado para o chat não estourar a tela
         caixa_chat = st.container(height=350)
         with caixa_chat:
             for msg in st.session_state.mensagens_chat:
                 with st.chat_message(msg["role"]):
                     st.markdown(msg["content"])
 
-        # Input do chat fica fixo abaixo da caixa
         if prompt := st.chat_input("Dúvidas com SQL?", key="chat_sidebar"):
             st.session_state.mensagens_chat.append({"role": "user", "content": prompt})
             with caixa_chat:
                 with st.chat_message("user"):
                     st.markdown(prompt)
-                # 2. Mostra carregamento e chama API da IA (Render)
+
                 with st.chat_message("assistant"):
                     with st.spinner("Consultando IA..."):
                         resposta_texto = consultar_ia_render(prompt, st.session_state.mensagens_chat[:-1])
                         st.markdown(resposta_texto)
-            # 3. Salva a resposta da IA
+
             st.session_state.mensagens_chat.append({"role": "assistant", "content": resposta_texto})
 
         st.divider()
@@ -358,7 +353,6 @@ def desenhar_painel_principal():
     if "Básico" in tipo_migracao:
         st.info("💡 **Modo Básico:** Copia todos os dados de uma tabela diretamente para o destino.")
         
-        # 1. Tenta conectar na origem para puxar as tabelas
         tabelas_disponiveis = []
         eng_origem_temp = None
         if src_data[4]:
@@ -371,7 +365,7 @@ def desenhar_painel_principal():
 
         c1, c2, c3 = st.columns(3)
         
-        tabela_origem = "" # Inicia vazio
+        tabela_origem = ""
         
         with c1: 
             if usa_lista:
@@ -390,7 +384,6 @@ def desenhar_painel_principal():
             pk_automatica = obter_chave_primaria(eng_origem_temp, tabela_origem)
             
         with c2: 
-            # O campo agora recebe o valor do banco e fica bloqueado (disabled=True)
             pk = st.text_input(
                 "Coluna ID (Para Inteligente)", 
                 value=pk_automatica, 
@@ -398,14 +391,12 @@ def desenhar_painel_principal():
                 help="A Chave Primária é detectada automaticamente do banco de dados."
             )
             
-            # Pequeno aviso visual se a tabela não tiver PK
             if tabela_origem and not pk_automatica:
                 st.caption("⚠️ Nenhuma PK detectada nesta tabela.")
             
         with c3: 
             modo = st.selectbox("Estratégia de Migração", ["Inteligente (Filtrar Existentes)", "Append (Adicionar)", "Replace (Substituir)"])
 
-        # 3. Área de Preview 
         st.write("") 
         
         if tabela_origem and eng_origem_temp:
@@ -520,10 +511,8 @@ def desenhar_painel_principal():
                     ok, err, eng = testar_conexao(url)
                     if ok:
                         try:
-                            # Extrai os dados
                             df = obter_dataframe_origem(eng)
                             
-                            # Envia direto para a API do Google Drive
                             sucesso, resultado = fazer_upload_direto_google(df, tabela_destino)
                             
                             if sucesso:
