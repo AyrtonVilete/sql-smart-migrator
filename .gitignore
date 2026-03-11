@@ -1,0 +1,35 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+env/
+venv/
+.venv/
+*.sqlite
+backup_*.csv
+.DS_Store
+.streamlit/secrets.toml
+
+# Credenciais e Tokens
+client_secret.json
+token.json
+credentials.json
+token.pickle
+.env
+.env.local
+.env.*.local
+pages/modo_local.txt
+
+# Pasta de credenciais
+Credencials/
+
+# Logs
+*.log
+logs/
+
+# Backups e arquivos temporários
+*.bak
+*.backup
+*.swp
+*.swo
+*.tmp
+
