@@ -319,13 +319,13 @@ def desenhar_sidebar():
         if st.button("⬅️ Voltar ao Portal", use_container_width=True):
             st.switch_page("Login.py") 
 
-        st.caption("v4.0 - Cloud Edition + IA Integrada")
+        st.caption("v4.0 - Smart Migrator")
 
 # ==========================================
 # 4. INTERFACE DO PAINEL PRINCIPAL (CENTRO)
 # ==========================================
 def desenhar_painel_principal():
-    st.title("🧰 SQL Smart Migrator (v4 Cloud + IA)")
+    st.title("🧰 SQL Smart Migrator")
     
     col_src, col_dst = st.columns(2)
     with col_src: src_data = render_inputs("1. Origem ", "src")
